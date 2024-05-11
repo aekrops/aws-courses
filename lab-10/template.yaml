@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: An AWS Serverless Application Model template describing your function.
+
+Resources:
+  lab10function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://kaizen-bucket-aws/lab10.zip
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.10
+      MemorySize: 128
+      Timeout: 3
+      Architectures:
+        - arm64
+      EphemeralStorage:
+        Size: 512
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: BUFFERED
+      PackageType: Zip
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaVPCAccessExecutionRole
+        - AmazonS3ReadOnlyAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: arn:aws:sns:eu-central-1:058264413197:NewCsvFileOnS3BucketCalculations
+      Events:
+        HttpApi:
+          Type: HttpApi
+          Properties:
+            Path: /test
+            Method: get
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref Bucket1
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .csv
+  Bucket1:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  BucketPolicy1:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket1
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Deny
+            Action: "s3:*"
+            Principal: "*"
+            Resource:
+              - !Sub "${Bucket1.Arn}/*"
+              - !Sub "${Bucket1.Arn}"
+            Condition:
+              Bool:
+                aws:SecureTransport: false

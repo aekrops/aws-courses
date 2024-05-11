@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: An AWS Course Work
+
+Parameters:
+  OpenApiKey:
+    Type: String
+    Description: API Key for OpenAI service
+
+Transform: 'AWS::Serverless-2016-10-31'  # This line is necessary for SAM
+
+Resources:
+  openApi:
+    Type: AWS::Serverless::Function  # SAM resource type
+    Properties:
+      CodeUri: s3://kaizen-bucket-aws/lambda-deployment-package-openapi.zip
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.10
+      MemorySize: 128
+      Timeout: 20
+      Architectures:
+        - arm64
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref OpenApiKey
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref OpenApiSecret
+      Events:
+        ApiProxy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId: !Ref MyApiGateway
+
+  MyHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: MyHTTPAPI
+      ProtocolType: HTTP
+      Description: Example HTTP API in API Gateway
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - '*'
+        AllowHeaders:
+          - '*'
+
+    # Defines a deployment for the HTTP API
+  MyApiDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - MyApiIntegration
+    Properties:
+      ApiId: !Ref MyHttpApi
+      Description: 'My HTTP API Deployment'
+
+    # Creates a stage automatically for the deployment
+  MyApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref MyHttpApi
+      DeploymentId: !Ref MyApiDeployment
+      StageName: prod
+      AutoDeploy: true
+
+    # Lambda integration
+  MyApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref MyHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt openApi.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 29000
+
+  saveOpenApiResponse:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://kaizen-bucket-aws/lambda-deployment-package-dynamodb.zip
+      Description: 'Response Handler Lambda Function'
+      MemorySize: 128
+      Timeout: 3
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.10
+      Architectures:
+        - arm64
+
+Outputs:
+  ApiURL:
+    Description: URL of the HTTP API
+    Value: !Sub 'https://${MyApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod'
+
